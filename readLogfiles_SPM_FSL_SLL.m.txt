@@ -1,0 +1,255 @@
+% Originally created by Dr. Lihua Mao
+% Psychology Department, Peking University, Beijing, China
+% Contact: #####maolihua(at)pku(dot)edu(dot)cn
+% 31-Dec-2005 00:56:28
+
+% Edited by Sook-Lei Liew, #####sliew(at)usc(dot)edu
+% Outputs: one .m files with all onset vectors for all conditions/runs (for use with SPM)
+% As well as individual .txt files for each condition (for use with FSL)
+% e.g., subjXX_runXX_conditionXX.txt
+
+
+datapath    	= '/fMRI_data/DD3';                 % Root-directory
+
+subjects     	= {'subj03','subj04','subj05','subj06','subj07','subj08','subj09','subj10','subj11'}; 	% The subject ID's;
+
+study_name = char('DD3');   % Data will be saved to {study_name}_vectors.m file
+
+scanner_trigger = '1';                % code of scanner trigger, check it out in your logfile
+response_code = {'1', '2','3','4','5','6'};     %1 = scanner trigger (5), 2- 5 = button box, 6 = experimenter subj movement
+
+my_TR = 2;                                     % TR, in secs
+
+nsub	= length(subjects); 	% Gets the number of subjects
+
+condition1 = {'stump','hand','H_Still','S_Still','null'};   % conditions in one logfile
+
+                                                               
+
+for j = 1:nsub   
+        
+    vector_file = strcat(study_name,'_vectors','.m');              % Data will be saved to {study_name}_vectors.m file
+    vector_file = fullfile(datapath,subjects{j},'conditionOnsets',vector_file);                  % Data file will be stored at your root-directory
+
+    vfid = fopen(vector_file,'w');                          % Open the vector file to write
+
+    for i = 1:size(condition1, 2)
+        fprintf(vfid,'%% The string: C%d represent condition: %s\n',i, condition1{i});
+    end
+    fprintf(vfid,'\n\');
+
+    fprintf(vfid,'\n%% ================ Subject: %s ===================\n\n',subjects{j});
+    
+    fprintf('\nNow processing subject: %s.....\n', subjects{j});
+    
+    f = dir(fullfile(datapath,subjects{j},'logfiles','run1','*.log'));            % Get logfiles name from subjects' folder, suppose subject's logfiles located right under his own folder
+    log_file_num = size(f,1);                                           % Get the amount of logfiles%
+%    for k = 1:log_file_num
+%        dateserial(k) = datenum(f(k).date,'dd-mm-yyyy HH:MM:SS');              % Get the file date and time, convert to date serias.
+%    end
+
+%    [B ix] = sort(dateserial);                            % sort by file creation time. It is very important because the file order corresponding to the session sequence.
+    [name1 name2 name3 name4]= f.name;                  %SLL - EDIT THIS BASED ON # OF LOGFILES!
+    log_file_names = {name1 name2 name3 name4};         %AND THIS TOO
+    [B ix] = sort(log_file_names);
+
+    for k = 1:log_file_num
+        sess = num2str(k);
+        fid = fopen(fullfile(datapath,subjects{j},'logfiles','run1',f(ix(k)).name), 'rt');       % Open the logfile to read !Change for run1/runExp/runFL!!
+
+        C = textscan(fid, '%*f%s%s%f%*[^\n]','delimiter', '\t','headerlines',5);   % Read 'code' column and 'Time' column from logfile, store them to cell array 'C'        
+        
+        for ii = 1:size(condition1,2)                                                    %make the logfiles for each condition/run
+            logname = strcat(subjects{j},'_run0',sess,condition1{ii},'.txt');
+            filenum = fopen(fullfile(datapath,subjects{j},'conditionOnsets',logname),'w');
+            if ii==1; file_1 = filenum;
+            elseif ii==2; file_2 = filenum;
+            elseif ii==3; file_3 = filenum;
+            elseif ii==4; file_4 = filenum;
+            else file_5 = filenum;
+            end
+        end
+
+        
+        for i=1:size(C{2})                                                                 % Find the first scanner trigger, i.e., the start time of the first TR
+            if strcmp(C{2}(i),scanner_trigger);   break;   end                             
+        end
+
+        
+        if C{3}(i) < 0
+            start_point = abs(2*C{3}(i));
+        else
+            start_point = abs(C{3}(i));                  % Save the time of the first TR
+        end
+        
+        ncondi = size(condition1,2) ;      
+
+        a = char(C{2});       %S-LL: in char format, the entire column of "response"
+%        b = find(a(:,1)>126);
+        b = find(a(:,1));   %S-LL: matrix of condition times (excluding nothing)
+        B = C{2}(b);    %S-LL: matrix of conditions in order
+        
+
+        for i = 1:ncondi
+%           y = strmatch(condition1{i}, B, 'exact');                % Searching for the places that match each condition
+            y = strmatch(condition1{i}, B);                % Searching for the places that match each condition
+%            y = y + 1;  
+            F=((C{3}(b(y)))-start_point)/(10000);              % compute the onset of one condition relative to the time of first TR
+            fprintf(vfid,'%%%s\nC%d_%d=[',condition1{i},i,k);
+            fprintf(vfid,'%.4f ',F);   % write to file, i represent the condition number, k represent the session number
+            fprintf(vfid,'];\n');
+            
+            if i==1 %stump
+                dur = [];
+                for r = 1:length(y) %cycles through all values in y                 
+                    subsetVect = B(y(r):length(B)); %starts searching at first y index for next condition
+                    subsetVect = char(subsetVect);
+                    e = strmatch('null_0_1array_1',subsetVect);
+                    
+                    if isempty(e)
+                        e = strmatch('1',subsetVect);
+                        lastOne = length(e);
+                        eIndex = y(r)+e(lastOne)-1;
+                    else
+                        eIndex = y(r)+e(1)-1;
+                    end
+                    
+                    ntime = (C{3}(b(eIndex)));
+                    ntime = (ntime-start_point)/(10000);
+                    dur = [dur ntime-F(r)];  %#ok<AGROW>
+                end
+
+                for w = 1:length(F)
+                    fprintf(file_1,'%.4f\t\t%.4f\t\t1\n',F(w,:),dur(:,w));
+                end
+
+            elseif i==2 %hand 
+                    dur = [];
+                for r = 1:length(y) %cycles through all values in y                 
+                    subsetVect = B(y(r):length(B)); %starts searching at first y index for next condition
+                    subsetVect = char(subsetVect);
+                    e = strmatch('null_0_1array_1',subsetVect);
+
+                    if isempty(e)
+                        e = strmatch('1',subsetVect);
+                        lastOne = length(e);
+                        eIndex = y(r)+e(lastOne)-1;
+                    else
+                        eIndex = y(r)+e(1)-1;
+                    end                    
+                    
+                    ntime = (C{3}(b(eIndex)));
+                    ntime = (ntime-start_point)/(10000);
+                    dur = [dur ntime-F(r)];  %#ok<AGROW>
+                end
+
+                for w = 1:length(F)
+                fprintf(file_2,'%.4f\t\t%.4f\t\t1\n',F(w,:),dur(:,w));
+                end
+                
+            elseif i==3 %HandStill
+                dur = [];
+                for r = 1:length(y) %cycles through all values in y                 
+                    subsetVect = B(y(r):length(B)); %starts searching at first y index for next condition
+                    subsetVect = char(subsetVect);
+                    e = strmatch('null_0_1array_1',subsetVect);
+                    
+                    if isempty(e)
+                        e = strmatch('1',subsetVect);
+                        lastOne = length(e);
+                        eIndex = y(r)+e(lastOne)-1;
+                    else
+                        eIndex = y(r)+e(1)-1;
+                    end
+
+                    ntime = (C{3}(b(eIndex)));
+                    ntime = (ntime-start_point)/(10000);
+                    dur = [dur ntime-F(r)];  %#ok<AGROW>
+                end
+          
+                for w = 1:length(F)
+                fprintf(file_3,'%.4f\t\t%.4f\t\t1\n',F(w,:),dur(:,w))
+                end
+            elseif i==4 %StumpStill
+                dur = [];
+                for r = 1:length(y) %cycles through all values in y                 
+                    subsetVect = B(y(r):length(B)); %starts searching at first y index for next condition
+                    subsetVect = char(subsetVect);
+                    e = strmatch('null_0_1array_1',subsetVect);
+
+                    if isempty(e)
+                        e = strmatch('1',subsetVect);
+                        lastOne = length(e);
+                        eIndex = y(r)+e(lastOne)-1;
+                    else
+                        eIndex = y(r)+e(1)-1;
+                    end
+
+                    ntime = (C{3}(b(eIndex)));
+                    ntime = (ntime-start_point)/(10000);
+                    dur = [dur ntime-F(r)];  %#ok<AGROW>
+                end
+          
+                for w = 1:length(F)
+                fprintf(file_4,'%.4f\t\t%.4f\t\t1\n',F(w,:),dur(:,w))
+                end
+            elseif i==5 %null
+                dur = [];
+                for r = 1:(length(y)-1) %cycles through all values in y except the last because it is the last element                
+                    subsetVect = B((y(r)+1):length(B)); %starts searching at first y index for next condition, not including current condition
+                    subsetVect = char(subsetVect);
+                    %look for next value, whether null or not. records each
+                    %null duration separately even if several in a row
+                    possVect = [];              %ewww this part is sooo unelegant. 
+                    e1 = strmatch('stump',subsetVect);
+                    e2 = strmatch('hand',subsetVect);
+                    e3 = strmatch('H_Still',subsetVect);
+                    e4 = strmatch('S_Still',subsetVect);
+                    e5 = strmatch('null',subsetVect);
+                    e1 = e1';
+                    e2 = e2';
+                    e3 = e3';
+                    e4 = e4';
+                    e5 = e5';
+                    possVect = [possVect e1 e2 e3 e4 e5];
+                    possVect = sort(possVect);
+                    
+%                     if isempty(possVect)
+%                         e = e5(1)+1;
+%                         eIndex = y(r)+e(1)-1;
+%                     elseif isempty(e5)
+%                         e = possVect(1)+1;
+%                         eIndex = y(r)+e(1)-1;
+%                     elseif e5(1)<possVect(1)
+%                         e = e5(1);
+%                         eIndex = y(r)+e(1)-1;
+%                     elseif possVect(1)<e5(1);
+%                         e = possVect(1)+1;
+%                         eIndex = y(r)+e(1)-1;
+%                     end
+                    e = possVect(1);
+                    eIndex = y(r)+e(1);
+                    ntime = (C{3}(b(eIndex)));          %end unelegance =P
+                    ntime = (ntime-start_point)/(10000);
+                    dur = [dur ntime-F(r)];  %#ok<AGROW>
+               end
+%                    e = strmatch('null_0_1array_1',subsetVect);
+%                    eIndex = y(r)+e(1)-1;
+              q = length(F);
+              for w = 1:q
+               if w < q
+                   fprintf(file_5,'%.4f\t\t%.4f\t\t1\n',F(w,:),dur(:,w));
+               elseif w==q
+                   fprintf(file_5,'%.4f\t\t2\t\t1\n',F(w,:));  %set last rest duration to 2 (one TR)
+               end
+             end
+                    
+            end
+   
+        end
+
+        fprintf(vfid,'\n');
+        fprintf('end\n');
+
+    end
+end
